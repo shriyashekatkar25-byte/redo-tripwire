@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Redo Tripwire · APM Lab</title>
+<meta name="description" content="When a redeploy silently reprocesses every document, should deploy stop and ask? A rejection-sampling Monte Carlo prototype by Shriya Shekatkar.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=EB+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;700&family=Rubik:wght@800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* hero: sticker collage pin */
+  --st-white:#ffffff; --st-ink:#141414; --st-sky:#5fb2e6; --st-pink:#ff4fa3; --st-orange:#ff7a1a;
+  --st-red:#e2202c; --st-violet:#8a4fe0; --st-green:#2fae4a; --st-yellow:#ffd23f;
+  /* cards: rainy umbrella painting pin */
+  --rain-blue:#6f86d6; --rain-deep:#3b55b0; --rain-peach:#f3cfa2; --rain-cream:#fbeedd; --rain-navy:#18224f;
+  /* badges: red crayon pin */
+  --cr-paper:#f7f0e4; --cr-red:#c8202b; --cr-pink:#f2a3a0; --cr-pearl:#d99a2b;
+  /* sim room: dragonfly pin */
+  --df-blush:#f8e7e6; --df-teal:#1f6f8b; --df-sea:#7cb7c6; --df-lime:#c7d68a; --df-ink:#2a3440; --df-navy:#173d63;
+  --body:#fffdf9; --text:#1b1b22; --muted:#5b5866;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--body);color:var(--text);font:16px/1.6 Inter,system-ui,sans-serif;overflow-x:hidden}
+a{color:var(--rain-deep)}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+h2{font:900 clamp(1.6rem,4vw,2.4rem)/1.1 Rubik,sans-serif;letter-spacing:-.01em;margin:0 0 .4em;text-transform:uppercase}
+section{padding:56px 0}
+.kicker{font:700 .78rem/1 Inter;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+
+/* ---------- HERO (sticker collage) ---------- */
+.hero{position:relative;background:#fff;overflow:hidden;padding:48px 0 40px;border-bottom:3px dashed #e8e2ef}
+.hero-grid{display:grid;grid-template-columns:1.15fr 1fr;gap:24px;align-items:center}
+.hero h1{font:900 clamp(2.2rem,6.4vw,4.6rem)/.98 Rubik,sans-serif;text-transform:uppercase;margin:0 0 18px;letter-spacing:-.02em}
+.hero h1 .rb{background:linear-gradient(90deg,var(--st-red),var(--st-orange),#e0a800,var(--st-green),var(--st-sky),var(--st-violet));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero .launch{display:inline-block;background:var(--st-yellow);border:3px solid #fff;box-shadow:0 0 0 2px var(--st-ink),4px 5px 0 var(--st-ink);border-radius:14px;padding:8px 14px;font-weight:700;transform:rotate(-1.2deg);margin-bottom:16px}
+.hero .launch a{color:var(--st-ink)}
+.byline{font-weight:700}
+.byline small{display:block;font-weight:500;color:var(--muted)}
+.stickers{width:100%;height:auto;max-height:440px}
+.sticker{filter:drop-shadow(3px 4px 0 rgba(20,20,20,.18));transform-box:fill-box;transform-origin:center}
+@media (prefers-reduced-motion:no-preference){
+  .sticker{animation:bob 4s ease-in-out infinite}
+  .sticker:nth-child(2n){animation-delay:-1.3s}.sticker:nth-child(3n){animation-delay:-2.4s}
+  @keyframes bob{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-6px) rotate(2deg)}}
+}
+
+/* ---------- CARDS (rainy umbrella painting) ---------- */
+.decision{background:var(--rain-blue);background-image:
+  repeating-linear-gradient(92deg,rgba(255,255,255,.13) 0 1px,transparent 1px 9px),
+  repeating-linear-gradient(88deg,rgba(24,34,79,.10) 0 1px,transparent 1px 23px);
+  color:var(--rain-navy)}
+.decision h2{color:#fff;text-shadow:2px 2px 0 var(--rain-navy)}
+.decision .kicker{color:#eef1ff}
+.masonry{columns:3 260px;column-gap:18px}
+.card{break-inside:avoid;margin:0 0 18px;background:var(--rain-cream);border-radius:6px;padding:18px 18px 14px;position:relative;
+  border:2px solid var(--rain-navy);box-shadow:6px 6px 0 rgba(24,34,79,.35)}
+.card:nth-child(3n+1){background:var(--rain-peach)}
+.card h3{font:800 1.05rem/1.2 Rubik,sans-serif;text-transform:uppercase;margin:0 0 8px}
+.card p,.card li{font-size:.95rem}
+.card ul{padding-left:18px;margin:6px 0}
+.card .pincap{font:600 .78rem Inter;color:#3a3f63;border-top:1px dashed var(--rain-navy);margin-top:10px;padding-top:6px}
+.scribble{position:absolute;right:10px;top:-14px;width:54px;height:54px}
+.btn{font:700 .92rem Inter;border:2px solid var(--rain-navy);background:var(--rain-peach);color:var(--rain-navy);padding:9px 14px;border-radius:999px;cursor:pointer;box-shadow:3px 3px 0 var(--rain-navy)}
+.btn:hover{transform:translate(-1px,-1px);box-shadow:4px 4px 0 var(--rain-navy)}
+.btn:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--st-pink);outline-offset:2px}
+.btn.alt{background:#fff}
+
+/* ---------- SIM ROOM (dragonfly) ---------- */
+.sim{background:var(--df-blush);background-image:
+  radial-gradient(circle at 20% 10%,rgba(124,183,198,.18),transparent 40%),
+  radial-gradient(circle at 85% 70%,rgba(199,214,138,.22),transparent 45%);
+  color:var(--df-ink)}
+.sim h2{font-family:"EB Garamond",serif;text-transform:none;font-weight:600;font-size:clamp(1.9rem,4.6vw,2.8rem);color:var(--df-navy)}
+.sim .lede{font-family:"EB Garamond",serif;font-size:1.2rem;max-width:760px}
+.sim-grid{display:grid;grid-template-columns:320px 1fr;gap:22px;margin-top:18px}
+.panel{background:rgba(255,255,255,.72);border:1px solid #c9dbe2;border-radius:16px;padding:16px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='34'%3E%3Cpath d='M0 17 L10 0 L30 0 L40 17 L30 34 L10 34Z' fill='none' stroke='%237cb7c6' stroke-opacity='.18'/%3E%3C/svg%3E")}
+.ctl{margin-bottom:14px}
+.ctl label{display:flex;justify-content:space-between;font:600 .88rem Inter;color:var(--df-navy)}
+.ctl output{font-family:"JetBrains Mono",monospace;font-weight:600}
+.ctl input[type=range]{width:100%;accent-color:var(--df-teal)}
+.ctl select{width:100%;padding:6px;border-radius:8px;border:1px solid #9cbcc8;font:500 .9rem Inter;background:#fff;color:var(--df-ink)}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{flex:1;font:600 .82rem Inter;padding:7px 8px;border-radius:999px;border:1.5px solid var(--df-teal);background:#fff;color:var(--df-teal);cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--df-teal);color:#fff}
+.canvases{display:grid;grid-template-columns:1fr;gap:14px}
+canvas{width:100%;display:block;border-radius:12px;background:#fffafa;border:1px solid #d9c9c9}
+.cap{font:italic 1rem "EB Garamond",serif;color:#4a4f58;margin:4px 2px 0}
+
+/* ---------- KPI BADGES (red crayon) ---------- */
+.badges{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:18px 0 6px}
+.badge{position:relative;background:var(--cr-paper);border-radius:14px;padding:14px 12px 12px;text-align:center;min-height:118px;
+  background-image:repeating-linear-gradient(-25deg,rgba(200,32,43,.05) 0 2px,transparent 2px 5px)}
+.badge svg.ring{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.badge .v{font:700 2rem/1 Caveat,cursive;color:var(--cr-red);position:relative}
+.badge .l{font:600 .76rem/1.25 Inter;color:#4a2a2a;position:relative;margin-top:4px}
+.badge .g{font:600 .7rem Inter;position:relative;margin-top:4px;color:#5c4632}
+.badge .pearl{position:absolute;right:10px;top:10px;width:12px;height:12px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#fff3cf,var(--cr-pearl) 60%,#8a5d12)}
+.badge.bad .pearl{background:radial-gradient(circle at 35% 35%,#ffd9d9,var(--cr-red) 60%,#6d0c12)}
+
+/* ---------- MEMO ---------- */
+.memo{background:var(--cr-paper)}
+.memo-card{background:#fff;border:2px solid var(--st-ink);border-radius:18px;padding:24px;box-shadow:8px 8px 0 var(--st-pink);max-width:880px}
+.memo-card dt{font:800 .8rem Rubik,sans-serif;text-transform:uppercase;letter-spacing:.08em;color:var(--cr-red);margin-top:14px}
+.memo-card dd{margin:4px 0 0}
+.vp{margin-top:18px;background:var(--st-yellow);border-radius:12px;padding:12px 14px;font-weight:700;border:2px dashed var(--st-ink)}
+
+/* ---------- MATH + CODE ---------- */
+.math{background:#fff}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.math .card{background:#fff;border-color:var(--df-navy);box-shadow:6px 6px 0 var(--df-sea)}
+.math .card:nth-child(2){background:var(--df-blush)}
+.formula{font-family:"JetBrains Mono",monospace;background:#f2f6f8;border-radius:8px;padding:8px 10px;font-size:.88rem;overflow-x:auto}
+.code{background:var(--rain-navy);color:#f6f2ea}
+.code h2{color:var(--rain-peach)}
+.code .kicker{color:#cfd6ff}
+pre{background:#0e1433;color:#eaf0ff;border-radius:12px;padding:16px;overflow-x:auto;font:13px/1.55 "JetBrains Mono",monospace;border:1px solid #3b4a8f;margin:8px 0 18px}
+pre .c{color:#a9b6e8}
+.code p{color:#e8ebf8}
+
+footer{background:#141414;color:#d9d6de;padding:28px 0 34px;font-size:.9rem}
+footer a{color:#ffd23f}
+.credits{font-size:11px;color:#a8a3b0;margin-top:10px;line-height:1.6}
+.credits a{color:#c9c3d2}
+
+@media (max-width:860px){
+  .hero-grid,.sim-grid,.two{grid-template-columns:1fr}
+  .badges{grid-template-columns:repeat(2,1fr)}
+  .stickers{max-height:300px}
+}
+@media (max-width:420px){ .wrap{padding:0 16px} section{padding:40px 0} }
+</style>
+</head>
+<body>
+
+<!-- ======================= HERO ======================= -->
+<header class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <div class="kicker">APM Lab · decision prototype</div>
+      <h1>I protect the <span class="rb">customer's bill</span> before I protect my deploy speed.</h1>
+      <div class="launch">Mirrors: <a href="https://docs.databricks.com/aws/en/release-notes/product/2026/november" target="_blank" rel="noopener">AI Function tasks land in Declarative Automation Bundles (Beta, Nov 13 2026)</a></div>
+      <div class="byline">Shriya Shekatkar<small>UCLA · Stats 102C Monte Carlo Methods</small></div>
+    </div>
+    <svg class="stickers" viewBox="0 0 420 400" role="img" aria-label="Hand-drawn sticker sheet: a document, a coin, a rainbow, a tripwire, a star, a raindrop and a heart">
+      <defs>
+        <pattern id="glit" width="6" height="6" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1" fill="#fff" opacity=".7"/><circle cx="4.5" cy="4" r=".7" fill="#fff" opacity=".45"/></pattern>
+        <filter id="rough"><feTurbulence baseFrequency=".9" numOctaves="1" seed="4"/><feDisplacementMap in="SourceGraphic" scale="2"/></filter>
+      </defs>
+      <!-- document sticker -->
+      <g class="sticker"><g transform="translate(30 30) rotate(-8)">
+        <path d="M0 0h70l26 26v96H0z" fill="#fff" stroke="#fff" stroke-width="14" stroke-linejoin="round"/>
+        <path d="M0 0h70l26 26v96H0z" fill="var(--st-sky)" stroke="var(--st-ink)" stroke-width="2.5"/>
+        <path d="M70 0v26h26" fill="#cfe9fb" stroke="var(--st-ink)" stroke-width="2.5"/>
+        <g stroke="var(--st-ink)" stroke-width="3" stroke-linecap="round"><path d="M14 46h62M14 62h62M14 78h44M14 94h56"/></g>
+        <rect width="96" height="122" fill="url(#glit)" opacity=".5"/>
+      </g></g>
+      <!-- coin -->
+      <g class="sticker"><g transform="translate(190 52)">
+        <circle r="44" fill="#fff"/><circle r="36" fill="var(--st-yellow)" stroke="var(--st-ink)" stroke-width="2.5"/>
+        <circle r="36" fill="url(#glit)"/><circle r="26" fill="none" stroke="var(--st-orange)" stroke-width="3" stroke-dasharray="4 4"/>
+        <text y="12" text-anchor="middle" font-family="Rubik" font-weight="900" font-size="34" fill="var(--st-ink)">$</text>
+      </g></g>
+      <!-- rainbow -->
+      <g class="sticker"><g transform="translate(270 80)">
+        <path d="M0 70a70 70 0 0 1 140 0" fill="none" stroke="#fff" stroke-width="58" stroke-linecap="round"/>
+        <path d="M8 70a62 62 0 0 1 124 0" fill="none" stroke="var(--st-red)" stroke-width="10"/>
+        <path d="M18 70a52 52 0 0 1 104 0" fill="none" stroke="var(--st-orange)" stroke-width="10"/>
+        <path d="M28 70a42 42 0 0 1 84 0" fill="none" stroke="var(--st-yellow)" stroke-width="10"/>
+        <path d="M38 70a32 32 0 0 1 64 0" fill="none" stroke="var(--st-green)" stroke-width="10"/>
+        <path d="M48 70a22 22 0 0 1 44 0" fill="none" stroke="var(--st-violet)" stroke-width="10"/>
+      </g></g>
+      <!-- tripwire -->
+      <g class="sticker"><g transform="translate(40 210)">
+        <rect x="-10" y="-10" width="210" height="70" rx="30" fill="#fff"/>
+        <rect x="0" y="0" width="190" height="50" rx="24" fill="var(--st-pink)" stroke="var(--st-ink)" stroke-width="2.5"/>
+        <path d="M14 26 C40 6 60 46 90 26 S140 6 176 26" fill="none" stroke="#fff" stroke-width="4" stroke-dasharray="7 6"/>
+        <circle cx="14" cy="26" r="7" fill="var(--st-yellow)" stroke="var(--st-ink)" stroke-width="2"/><circle cx="176" cy="26" r="7" fill="var(--st-yellow)" stroke="var(--st-ink)" stroke-width="2"/>
+        <rect width="190" height="50" rx="24" fill="url(#glit)" opacity=".6"/>
+      </g></g>
+      <!-- star -->
+      <g class="sticker"><g transform="translate(300 250)">
+        <path d="M0-48 14-15 50-12 22 10 31 46 0 26-31 46-22 10-50-12-14-15z" fill="#fff" stroke="#fff" stroke-width="14" stroke-linejoin="round"/>
+        <path d="M0-48 14-15 50-12 22 10 31 46 0 26-31 46-22 10-50-12-14-15z" fill="var(--st-violet)" stroke="var(--st-ink)" stroke-width="2.5" stroke-linejoin="round"/>
+        <path d="M0-48 14-15 50-12 22 10 31 46 0 26-31 46-22 10-50-12-14-15z" fill="url(#glit)"/>
+      </g></g>
+      <!-- raindrop -->
+      <g class="sticker"><g transform="translate(375 330)">
+        <path d="M0-40C14-18 24-6 24 8a24 24 0 0 1-48 0C-24-6-14-18 0-40z" fill="#fff" stroke="#fff" stroke-width="12"/>
+        <path d="M0-40C14-18 24-6 24 8a24 24 0 0 1-48 0C-24-6-14-18 0-40z" fill="var(--st-sky)" stroke="var(--st-ink)" stroke-width="2.5"/>
+        <path d="M-10 4a10 12 0 0 0 8 14" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+      </g></g>
+      <!-- heart -->
+      <g class="sticker"><g transform="translate(150 330)">
+        <path d="M0 30-34-4a20 20 0 0 1 34-24 20 20 0 0 1 34 24z" fill="#fff" stroke="#fff" stroke-width="14" stroke-linejoin="round"/>
+        <path d="M0 30-34-4a20 20 0 0 1 34-24 20 20 0 0 1 34 24z" fill="var(--st-red)" stroke="var(--st-ink)" stroke-width="2.5" stroke-linejoin="round"/>
+        <path d="M0 30-34-4a20 20 0 0 1 34-24 20 20 0 0 1 34 24z" fill="url(#glit)"/>
+      </g></g>
+      <!-- leaf sticker -->
+      <g class="sticker"><g transform="translate(240 345) rotate(-20)">
+        <ellipse rx="34" ry="18" fill="#fff"/><ellipse rx="28" ry="12" fill="var(--st-green)" stroke="var(--st-ink)" stroke-width="2.5"/>
+        <path d="M-26 0H26" stroke="var(--st-ink)" stroke-width="2"/>
+      </g></g>
+    </svg>
+  </div>
+</header>
+
+<!-- ======================= DECISION ======================= -->
+<section class="decision" id="decision">
+  <div class="wrap">
+    <div class="kicker">The decision board</div>
+    <h2>Rename a table, re-pay for every page?</h2>
+    <div class="masonry">
+      <article class="card">
+        <svg class="scribble" viewBox="0 0 60 60" aria-hidden="true"><path d="M30 6 C10 8 4 30 14 44 S46 58 54 36 46 6 26 10" fill="none" stroke="#18224f" stroke-width="2.5" stroke-linecap="round"/><path d="M22 30h16M30 22v16" stroke="#18224f" stroke-width="3" stroke-linecap="round"/></svg>
+        <h3>Customer problem</h3>
+        <p>A data engineer keeps an AI document-parsing job in a bundle. They rename the output table in YAML during a tidy-up and run <code>deploy</code>. Because the task is incremental, a new output table means <b>every file in the volume is processed again</b>. The diff looks like one line. The bill can look like a month.</p>
+        <div class="pincap">📌 pinned to: who feels the pain</div>
+      </article>
+      <article class="card">
+        <h3>Proposed change</h3>
+        <p>At deploy time, when a change will trigger a full reprocess, sample a few dozen files, estimate the reprocess cost, and <b>stop to ask for confirmation only when the estimate is above a threshold&nbsp;T</b>. In CI, the same gate needs an explicit approve flag.</p>
+        <p>The question this prototype answers: <b>what should the default T be?</b></p>
+        <div class="pincap">📌 pinned to: the change</div>
+      </article>
+      <article class="card">
+        <h3>Success metric</h3>
+        <p><b>Missed bill shocks</b>: share of reprocessing redeploys that cost more than the customer's "shock line" and went through with no prompt. Target: ≤&nbsp;1%.</p>
+        <div class="pincap">📌 pinned to: north star</div>
+      </article>
+      <article class="card">
+        <h3>Guardrails</h3>
+        <ul>
+          <li>Prompt rate ≤ 15% of reprocessing redeploys (friction)</li>
+          <li>Needless prompts ≤ 35% of prompts (true cost under half the shock line)</li>
+          <li>Estimate error at P90 ≤ ±40%</li>
+          <li>Added deploy time ≤ 3 s (preview sample capped at 60 files)</li>
+        </ul>
+        <div class="pincap">📌 pinned to: what we won't break</div>
+      </article>
+      <article class="card">
+        <h3>Stakeholders</h3>
+        <ul>
+          <li>Bundles / CLI eng: owns the deploy gate</li>
+          <li>AI Functions team: cost-per-page model</li>
+          <li>Jobs: incremental state + run semantics</li>
+          <li>FinOps admins: budgets and alerts</li>
+          <li>Support: the "why did my bill jump" tickets</li>
+        </ul>
+        <div class="pincap">📌 pinned to: who signs off</div>
+      </article>
+      <article class="card">
+        <h3>Options on the table</h3>
+        <p><b>A.</b> Warn in text only. <b>B.</b> Confirm above T (this model). <b>C.</b> Always block a full reprocess. A is cheap but easy to scroll past; C trains people to add the approve flag by reflex.</p>
+        <div class="pincap">📌 pinned to: alternatives</div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= SIM ======================= -->
+<section class="sim" id="sim">
+  <div class="wrap">
+    <div class="kicker" style="color:#4f5d6b">Live simulation · seeded · rejection sampling</div>
+    <h2>The redeploy simulation room</h2>
+    <p class="lede">Each run plays out 1,200 imaginary redeploys that trigger a full reprocess. For each one, pages per file come from an odd, two-humped shape (short invoices, long contracts) that no built-in sampler covers, so we draw it with <b>rejection sampling</b>. The preview gate sees 60 files; the "true" bill is estimated from a larger, independent 300-file sample scaled to the whole volume.</p>
+
+    <div class="badges" id="badges" aria-live="polite"></div>
+
+    <div class="sim-grid">
+      <div class="panel">
+        <div class="ctl"><label for="tSlider">Confirm threshold T <output id="tOut"></output></label><input id="tSlider" type="range" min="10" max="3000" step="10" value="400"></div>
+        <div class="ctl"><label for="shockSlider">Customer shock line <output id="shockOut"></output></label><input id="shockSlider" type="range" min="100" max="5000" step="50" value="750"></div>
+        <div class="ctl"><label for="docsSlider">Median files in a volume <output id="docsOut"></output></label><input id="docsSlider" type="range" min="200" max="20000" step="100" value="1500"></div>
+        <div class="ctl"><label for="longSlider">Share of long documents <output id="longOut"></output></label><input id="longSlider" type="range" min="0" max="0.7" step="0.05" value="0.3"></div>
+        <div class="ctl"><label for="fnSel">AI function</label>
+          <select id="fnSel">
+            <option value="0.005">Parse documents ($0.005 / page, simulated)</option>
+            <option value="0.0015">Extract fields ($0.0015 / page, simulated)</option>
+            <option value="0.0004">Classify ($0.0004 / page, simulated)</option>
+          </select></div>
+        <div class="ctl"><label>Envelope g(x)</label>
+          <div class="seg" role="group" aria-label="Envelope choice">
+            <button type="button" id="envBox" aria-pressed="false">Flat box</button>
+            <button type="button" id="envExp" aria-pressed="true">Exp + flat</button>
+          </div></div>
+        <div class="ctl"><label for="seedIn">Seed <output id="seedOut"></output></label><input id="seedIn" type="range" min="1" max="999" step="1" value="102"></div>
+        <div class="seg"><button type="button" id="bestT">Find the best T</button><button type="button" id="reroll">New seed</button></div>
+      </div>
+      <div class="canvases">
+        <div><canvas id="rejCanvas" width="760" height="300" aria-label="Animated rejection sampling: darts under the curve are kept, darts above are thrown out"></canvas>
+          <p class="cap">Darts thrown under the envelope M·g(x). Teal darts landed under the target f(x) and are kept; grey ones are rejected.</p></div>
+        <div><canvas id="histCanvas" width="760" height="260" aria-label="Histogram of reprocess cost per redeploy, with the threshold and shock lines"></canvas>
+          <p class="cap">True reprocess cost per redeploy (log scale). Pink = prompted, navy = sailed through. Dashed lines: T and the shock line.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= MEMO ======================= -->
+<section class="memo" id="memo">
+  <div class="wrap">
+    <div class="kicker">Director memo · rewrites itself from the simulation</div>
+    <h2>Memo: default for the reprocess gate</h2>
+    <dl class="memo-card" id="memoCard"></dl>
+  </div>
+</section>
+
+<!-- ======================= MATH ======================= -->
+<section class="math" id="math">
+  <div class="wrap">
+    <div class="kicker">The math, from my Monte Carlo course</div>
+    <h2>Rejection sampling, in plain words</h2>
+    <div class="two">
+      <div class="card">
+        <h3>The idea</h3>
+        <p>I want draws from a shape f(x) (pages per file) that I can write down but can't invert. I pick an easy shape g(x) I <i>can</i> sample, and stretch it by a constant M so M·g(x) sits on or above f(x) everywhere, like a tent over a hill.</p>
+        <p>Then: draw x from g, draw U uniform on [0,1], and keep x only if</p>
+        <div class="formula">U ≤ f(x) / (M · g(x))</div>
+        <p>The kept points are exact draws from f. The fraction kept is 1/M (when f and g are both proper densities), so a snug tent wastes fewer darts.</p>
+      </div>
+      <div class="card">
+        <h3>Why it matters for this product call</h3>
+        <p>Page counts are lumpy: lots of 1–3 page invoices, a second hump of 30–50 page contracts. A normal or plain exponential would hide the contract hump, and the contract hump is what drives bill shock.</p>
+        <p>Toggle the envelope above: the flat box keeps only about 6% of darts; a 50/50 exponential-plus-flat tent that hugs the short-doc spike keeps about half. Same answer, cheaper compute. That is also how I'd want the real preview estimator to behave: exact shape, low overhead in the deploy path.</p>
+        <div class="formula">acceptance ≈ 1/M · cost per kept draw ≈ M proposals</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= CODE ======================= -->
+<section class="code" id="code">
+  <div class="wrap">
+    <div class="kicker">How I'd run it on real data</div>
+    <h2>SQL + Python sketch</h2>
+    <p>Illustrative table names. Step 1: find redeploys that changed an AI Function task's input or output table and join to what the next run actually cost.</p>
+<pre><span class="c">-- reprocessing redeploys and their real follow-up cost (illustrative tables)</span>
+WITH redeploys AS (
+  SELECT workspace_id, job_id, task_key, deployed_at
+  FROM   ops.bundle_deploy_events
+  WHERE  task_type = 'ai_function'
+    AND  (output_table_changed OR input_table_changed)
+    AND  deployed_at &gt;= current_date() - INTERVAL 90 DAYS
+),
+next_run AS (
+  SELECT r.*, u.pages_processed, u.list_cost_usd,
+         ROW_NUMBER() OVER (PARTITION BY r.job_id, r.task_key, r.deployed_at
+                            ORDER BY u.run_started_at) AS rn
+  FROM   redeploys r
+  JOIN   ops.ai_function_task_usage u
+    ON   u.job_id = r.job_id AND u.task_key = r.task_key
+   AND   u.run_started_at &gt; r.deployed_at
+)
+SELECT approx_percentile(list_cost_usd, array(0.5, 0.9, 0.99)) AS cost_pcts,
+       avg(CASE WHEN list_cost_usd &gt; 750 THEN 1 ELSE 0 END)     AS share_over_shock
+FROM   next_run WHERE rn = 1;</pre>
+    <p>Step 2: fit the pages-per-file shape from a sample and back-test thresholds with rejection sampling.</p>
+<pre>import numpy as np
+pages = spark.table("ops.file_page_counts_sample").toPandas()["pages"].to_numpy()
+
+<span class="c"># smooth target f(x) from the sample (kernel density), bounded to [1, 120]</span>
+from scipy.stats import gaussian_kde
+f = gaussian_kde(pages, bw_method=0.15)
+xs = np.linspace(1, 120, 2000)
+g = lambda x: np.full_like(x, 1/119)            <span class="c"># flat proposal</span>
+M = 1.05 * (f(xs) / g(xs)).max()                <span class="c"># tent height</span>
+
+rng = np.random.default_rng(102)
+def draw(n):
+    out = []
+    while len(out) &lt; n:
+        x = rng.uniform(1, 120, 4*n)
+        u = rng.uniform(size=x.size)
+        out.extend(x[u &lt;= f(x) / (M * g(x))])
+    return np.array(out[:n])
+
+for T in [100, 200, 400, 800]:
+    est = draw(60).mean()                        <span class="c"># what the deploy gate sees</span>
+    print(T, est, "acceptance≈", 1/M)</pre>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>Unofficial concept prototype by Shriya Shekatkar. All data is simulated. Not affiliated with any company.</p>
+    <p><a href="https://shriyashekatkar25-byte.github.io/apm-lab/">← Back to the APM Lab gallery</a></p>
+    <p class="credits">Design inspired by:
+      <a href="https://www.pinterest.com/pin/1151936410972917554/" target="_blank" rel="noopener">"Today I am excited about everything" sticker collage by chlo</a> ·
+      <a href="https://www.pinterest.com/pin/1126111081822628732/" target="_blank" rel="noopener">rainy umbrella painting (Pin on art)</a> ·
+      <a href="https://www.pinterest.com/pin/1083045410427952306/" target="_blank" rel="noopener">red crayon "Hey Girl" drawing by Women of Prayer (@women_of_prayer91)</a> ·
+      <a href="https://www.pinterest.com/pin/598767712988782831/" target="_blank" rel="noopener">Dragonfly/Damselfly pin by Taty</a></p>
+  </div>
+</footer>
+
+<script>
+(function(){
+'use strict';
+const $=id=>document.getElementById(id);
+const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}
+let rand=mulberry32(102);
+function normal(){let u=0;while(u===0)u=rand();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*rand());}
+
+const LO=1, HI=120;
+// target f(x): unnormalised two-hump page-count shape
+let longShare=0.3;
+function fRaw(x){
+  const s=1-longShare;
+  const shortPart = s * (x/2) * Math.exp(-(x-1)/2.2) / 2.2;          // spike of short docs
+  const longPart  = longShare * Math.exp(-0.5*Math.pow((x-38)/11,2)) / (11*Math.sqrt(2*Math.PI));
+  return shortPart + longPart;
+}
+// normalise f numerically
+let Z=1;
+function normalise(){let s=0;const n=4000,h=(HI-LO)/n;for(let i=0;i<=n;i++){const x=LO+i*h;s+=(i===0||i===n?0.5:1)*fRaw(x);}Z=s*h;}
+const f=x=>fRaw(x)/Z;
+
+// envelopes
+let envType='exp';
+const lam=0.25, wExp=0.5;
+function gBox(x){return 1/(HI-LO);}
+function gExp(x){const e=lam*Math.exp(-lam*(x-LO))/(1-Math.exp(-lam*(HI-LO)));return wExp*e+(1-wExp)/(HI-LO);}
+function sampleBox(){return LO+(HI-LO)*rand();}
+function sampleExp(){ // composition: pick component, then inverse CDF
+  if(rand()<wExp){const u=rand();return LO-Math.log(1-u*(1-Math.exp(-lam*(HI-LO))))/lam;}
+  return sampleBox();
+}
+let M=1;
+function computeM(){let m=0;const g=envType==='box'?gBox:gExp;for(let i=0;i<=3000;i++){const x=LO+(HI-LO)*i/3000;m=Math.max(m,f(x)/g(x));}M=m*1.02;}
+let tried=0, kept=0;
+function drawPages(){
+  const g=envType==='box'?gBox:gExp, s=envType==='box'?sampleBox:sampleExp;
+  for(;;){tried++;const x=s();if(rand()<=f(x)/(M*g(x))){kept++;return x;}}
+}
+
+const N_EVENTS=1200, PREVIEW=60, TRUTH_SAMPLE=300;
+let events=[];
+function simulate(){
+  longShare=+$('longSlider').value; normalise(); computeM();
+  rand=mulberry32(+$('seedIn').value); tried=0; kept=0;
+  const med=+$('docsSlider').value, price=+$('fnSel').value;
+  events=[];
+  for(let e=0;e<N_EVENTS;e++){
+    const nDocs=Math.max(20,Math.round(med*Math.exp(1.3*normal())));
+    // the preview gate sees PREVIEW files
+    let sp=0;for(let i=0;i<PREVIEW;i++)sp+=Math.ceil(drawPages());
+    const est=price*nDocs*sp/PREVIEW;
+    // the bill: estimate total from a larger independent sample of the volume
+    const k=Math.min(nDocs,TRUTH_SAMPLE);let st=0;for(let i=0;i<k;i++)st+=Math.ceil(drawPages());
+    const truth=price*nDocs*st/k;
+    events.push({est,truth,nDocs});
+  }
+}
+function score(T,shock){
+  let prompted=0,missed=0,needless=0,errs=[];
+  for(const ev of events){
+    const p=ev.est>T;
+    if(p){prompted++; if(ev.truth<shock/2)needless++;}
+    else if(ev.truth>shock) missed++;
+    errs.push(Math.abs(ev.est-ev.truth)/ev.truth);
+  }
+  errs.sort((a,b)=>a-b);
+  const costs=events.map(e=>e.truth).sort((a,b)=>a-b);
+  return {prompt:prompted/N_EVENTS, missed:missed/N_EVENTS, needless:prompted?needless/prompted:0,
+    err90:errs[Math.floor(.9*errs.length)], p50:costs[Math.floor(.5*costs.length)], p90:costs[Math.floor(.9*costs.length)],
+    shockShare:costs.filter(c=>c>shock).length/N_EVENTS};
+}
+const fmt$=v=>v>=1000?'$'+(v/1000).toFixed(v>=10000?0:1)+'k':'$'+Math.round(v);
+const pct=v=>(v*100).toFixed(v<0.1?1:0)+'%';
+
+function ring(){return `<svg class="ring" viewBox="0 0 200 120" preserveAspectRatio="none" aria-hidden="true"><path d="M20 60 C18 18 90 6 150 12 S196 50 182 86 110 116 50 108 6 80 26 40 90 4 160 16" fill="none" stroke="#c8202b" stroke-width="2.2" stroke-linecap="round" opacity=".75"/></svg>`;}
+function badge(v,l,g,bad){return `<div class="badge ${bad?'bad':''}">${ring()}<span class="pearl"></span><div class="v">${v}</div><div class="l">${l}</div><div class="g">${g}</div></div>`;}
+
+let S;
+function render(){
+  const T=+$('tSlider').value, shock=+$('shockSlider').value;
+  $('tOut').textContent=fmt$(T); $('shockOut').textContent=fmt$(shock);
+  $('docsOut').textContent=(+$('docsSlider').value).toLocaleString(); $('longOut').textContent=Math.round(+$('longSlider').value*100)+'%';
+  $('seedOut').textContent=$('seedIn').value;
+  S=score(T,shock);
+  const acc=kept/tried;
+  $('badges').innerHTML=
+    badge(pct(S.missed),'Missed bill shocks','goal ≤ 1%',S.missed>0.01)+
+    badge(pct(S.prompt),'Prompt rate','guardrail ≤ 15%',S.prompt>0.15)+
+    badge(pct(S.needless),'Needless prompts','guardrail ≤ 35%',S.needless>0.35)+
+    badge('±'+pct(S.err90),'Estimate error, P90','guardrail ≤ ±40%',S.err90>0.4)+
+    badge(pct(acc),'Darts kept (≈1/M)','M = '+M.toFixed(2),false);
+  drawHist(T,shock); writeMemo(T,shock);
+}
+
+function drawHist(T,shock){
+  const c=$('histCanvas'),x=c.getContext('2d'),W=c.width,H=c.height,pad=34;
+  x.clearRect(0,0,W,H);
+  const lo=Math.log10(1),hi=Math.log10(50000),B=48;
+  const binsP=new Array(B).fill(0),binsN=new Array(B).fill(0);
+  for(const ev of events){let b=Math.floor((Math.log10(Math.max(1,ev.truth))-lo)/(hi-lo)*B);b=Math.min(B-1,Math.max(0,b));(ev.est>T?binsP:binsN)[b]++;}
+  const mx=Math.max(...binsP.map((v,i)=>v+binsN[i]));
+  const bw=(W-pad*2)/B;
+  for(let i=0;i<B;i++){
+    const hn=(binsN[i]/mx)*(H-pad*2), hp=(binsP[i]/mx)*(H-pad*2);
+    x.fillStyle='#173d63';x.fillRect(pad+i*bw+1,H-pad-hn,bw-2,hn);
+    x.fillStyle='#ff4fa3';x.fillRect(pad+i*bw+1,H-pad-hn-hp,bw-2,hp);
+  }
+  x.strokeStyle='#2a3440';x.beginPath();x.moveTo(pad,H-pad);x.lineTo(W-pad,H-pad);x.stroke();
+  x.fillStyle='#2a3440';x.font='13px Inter';x.textAlign='center';
+  [1,10,100,1000,10000].forEach(v=>{const px=pad+(Math.log10(v)-lo)/(hi-lo)*(W-pad*2);x.fillText(fmt$(v),px,H-pad+18);});
+  const line=(v,col,label,dy)=>{const px=pad+(Math.log10(v)-lo)/(hi-lo)*(W-pad*2);x.save();x.setLineDash([6,5]);x.strokeStyle=col;x.lineWidth=2;x.beginPath();x.moveTo(px,pad-8);x.lineTo(px,H-pad);x.stroke();x.restore();x.fillStyle=col;x.font='600 13px Inter';x.textAlign='left';x.fillText(label,Math.min(px+4,W-110),pad+dy);};
+  line(T,'#b0105f','T '+fmt$(T),0); line(shock,'#c8202b','shock '+fmt$(shock),18);
+}
+
+// rejection-sampling animation
+let darts=[],animId=null;
+function drawRejBase(){
+  const c=$('rejCanvas'),x=c.getContext('2d'),W=c.width,H=c.height,pad=30;
+  const g=envType==='box'?gBox:gExp;
+  let ymax=0;for(let i=0;i<=400;i++){const xv=LO+(HI-LO)*i/400;ymax=Math.max(ymax,M*g(xv));}
+  ymax*=1.08;
+  const X=v=>pad+(v-LO)/(HI-LO)*(W-pad*2), Y=v=>H-pad-(v/ymax)*(H-pad*2);
+  x.clearRect(0,0,W,H);
+  // vein lattice
+  x.strokeStyle='rgba(124,183,198,.18)';x.lineWidth=1;
+  for(let i=0;i<W;i+=26){x.beginPath();x.moveTo(i,0);x.lineTo(i+60,H);x.stroke();}
+  // envelope
+  x.beginPath();for(let i=0;i<=400;i++){const xv=LO+(HI-LO)*i/400;const px=X(xv),py=Y(M*g(xv));i?x.lineTo(px,py):x.moveTo(px,py);}
+  x.strokeStyle='#173d63';x.lineWidth=2;x.setLineDash([5,4]);x.stroke();x.setLineDash([]);
+  // target with iridescent fill
+  const grad=x.createLinearGradient(0,0,W,0);grad.addColorStop(0,'rgba(31,111,139,.35)');grad.addColorStop(.5,'rgba(124,183,198,.35)');grad.addColorStop(1,'rgba(199,214,138,.45)');
+  x.beginPath();x.moveTo(X(LO),Y(0));for(let i=0;i<=400;i++){const xv=LO+(HI-LO)*i/400;x.lineTo(X(xv),Y(f(xv)));}x.lineTo(X(HI),Y(0));x.closePath();x.fillStyle=grad;x.fill();
+  x.beginPath();for(let i=0;i<=400;i++){const xv=LO+(HI-LO)*i/400;const px=X(xv),py=Y(f(xv));i?x.lineTo(px,py):x.moveTo(px,py);}x.strokeStyle='#1f6f8b';x.lineWidth=2.5;x.stroke();
+  x.fillStyle='#2a3440';x.font='13px Inter';x.textAlign='center';
+  [1,20,40,60,80,100,120].forEach(v=>x.fillText(v,X(v),H-pad+18));
+  x.textAlign='left';x.font='italic 15px "EB Garamond", serif';x.fillText('pages per file → f(x) solid, M·g(x) dashed',pad+6,pad-8);
+  return {x,X,Y,g};
+}
+function animateRej(){
+  if(animId)cancelAnimationFrame(animId);
+  const r=mulberry32(+$('seedIn').value+7);darts=[];
+  const base=drawRejBase();
+  const s=envType==='box'?sampleBox:sampleExp;
+  const prev=rand;rand=r;const pts=[];for(let i=0;i<700;i++){const xv=s();const u=r();pts.push({xv,y:u*M*base.g(xv),ok:u<=f(xv)/(M*base.g(xv))});}rand=prev;
+  const paint=(n)=>{const b=drawRejBase();for(let i=0;i<n;i++){const p=pts[i];b.x.beginPath();b.x.arc(b.X(p.xv),b.Y(p.y),p.ok?3:2.4,0,7);b.x.fillStyle=p.ok?'#1f6f8b':'rgba(90,96,110,.45)';b.x.fill();}};
+  if(reduce){paint(pts.length);return;}
+  let n=0;const step=()=>{n=Math.min(pts.length,n+8);paint(n);if(n<pts.length)animId=requestAnimationFrame(step);};step();
+}
+
+function writeMemo(T,shock){
+  const ok=S.missed<=0.01&&S.prompt<=0.15&&S.needless<=0.35&&S.err90<=0.4;
+  const decision= ok ? `Ship the confirm gate as Beta default with T = ${fmt$(T)}.` :
+    (S.missed>0.01 ? `Not yet: at T = ${fmt$(T)} too many big bills slip through. Lower T.` :
+     S.prompt>0.15 ? `Not yet: at T = ${fmt$(T)} we prompt too often. Raise T or shrink the default preview scope.` :
+     `Close, but the guardrails on noise are red. Grow the preview sample before shipping T = ${fmt$(T)}.`);
+  const memo=[
+    ['Decision',decision],
+    ['Evidence',`Across ${N_EVENTS.toLocaleString()} simulated reprocessing redeploys (median ${(+$('docsSlider').value).toLocaleString()} files, ${Math.round(longShare*100)}% long docs), the median reprocess costs ${fmt$(S.p50)} and the P90 costs ${fmt$(S.p90)}; ${pct(S.shockShare)} cross the ${fmt$(shock)} shock line. With T = ${fmt$(T)}: ${pct(S.prompt)} of redeploys prompt, ${pct(S.missed)} are missed shocks, ${pct(S.needless)} of prompts are needless.`],
+    ['Risks',`(1) A 60-file preview misreads lumpy volumes: P90 estimate error is ±${pct(S.err90)}. (2) Prompt fatigue in CI turns the approve flag into muscle memory. (3) The page-count shape shifts by customer; a contract-heavy tenant needs a lower T.`],
+    ['Rollout plan',`Week 1: estimate-only text in deploy output, log what the gate <i>would</i> have done. Week 3: gate on for 10% of workspaces, compare support tickets and approve-flag usage. Week 6: default on if missed shocks ≤ 1% and prompt rate ≤ 15%.`],
+    ['Next step',`Pull 90 days of redeploys that changed an AI Function task's tables (query below) and refit the page-count shape per industry before locking T.`],
+  ];
+  $('memoCard').innerHTML=memo.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join('')+
+    `<div class="vp">What I'd tell the VP: ${ok?`"A ${fmt$(T)} confirm gate catches ${pct(1-S.missed/Math.max(S.shockShare,1e-9))} of surprise reprocess bills while asking on only ${pct(S.prompt)} of deploys."`:`"The gate is right but the threshold isn't yet; one more week of tuning saves us a quarter of bill-shock tickets."`}</div>`;
+}
+
+function bestT(){
+  const shock=+$('shockSlider').value;let best=null;
+  for(let T=3000;T>=10;T-=10){const s=score(T,shock);if(s.missed<=0.01){best=T;break;}}
+  if(best===null)best=10;$('tSlider').value=best;render();
+}
+
+let timer=null;
+function rerun(full){clearTimeout(timer);timer=setTimeout(()=>{simulate();render();if(full)animateRej();},40);}
+['docsSlider','longSlider','fnSel','seedIn'].forEach(id=>$(id).addEventListener('input',()=>rerun(id==='longSlider'||id==='seedIn')));
+['tSlider','shockSlider'].forEach(id=>$(id).addEventListener('input',render));
+$('envBox').addEventListener('click',()=>{envType='box';$('envBox').setAttribute('aria-pressed','true');$('envExp').setAttribute('aria-pressed','false');rerun(true);});
+$('envExp').addEventListener('click',()=>{envType='exp';$('envExp').setAttribute('aria-pressed','true');$('envBox').setAttribute('aria-pressed','false');rerun(true);});
+$('bestT').addEventListener('click',bestT);
+$('reroll').addEventListener('click',()=>{$('seedIn').value=1+Math.floor(Math.random()*999);rerun(true);});
+
+simulate();render();animateRej();
+})();
+</script>
+</body>
+</html>
